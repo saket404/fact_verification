@@ -13,6 +13,8 @@ import operator
 import sqlite3
 predictor = Predictor.from_path("https://s3-us-west-2.amazonaws.com/allennlp/models/fine-grained-ner-model-elmo-2018.12.21.tar.gz")
 
+import time
+start = time. time()
 
 #------------ Get names of all documents -------------
 index = []
@@ -38,7 +40,7 @@ def wiki(word):
 def doc_ret(sen):
     org = sen
     claim = get_ner(sen,predictor)
-    print(f'Claim NER: {claim}')
+    #print(f'Claim NER: {claim}')
     c_doc = []
     for c_ent in claim:
         result = ""
@@ -73,24 +75,29 @@ def doc_ret(sen):
     
       
     if not result and not claim:
-      tense = ['is','was','were','are','had','has']
-      tense_s = [i for i in tense if i in org.split()]
-      if tense_s:
-        result = wiki(org.split(tense_s[0])[0])
-      else:
-        result = wiki(org)
-      
+        tense = ['is','was','were','are','had','has']
+        tense_s = [i for i in tense if i in org.split()]
+        if tense_s:
+            if org.split(tense_s[0])[0] in doc_ent:
+                result = word_to_doc(org.split(tense_s[0])[0])
+
+            result = wiki(org.split(tense_s[0])[0])
+        else:
+            result = wiki(org)
+        
         if result and result in doc_ent:
-              result = word_to_doc(result)
-              c_doc.append(result)
+            result = word_to_doc(result)
+            c_doc.append(result)
   
 
     return list(set(c_doc))
 
 #----------- Sentence Retrieval component ---------------
 def sen_retrieval(docs,claim):
+    if not docs:
+        return None
     claim = claim.replace('.','')
-    vectorizer = TfidfVectorizer(stop_words = 'english',ngram_range = (2,3))
+    vectorizer = TfidfVectorizer(stop_words = 'english',ngram_range = (1,3))
     conn = sqlite3.connect('wiki/doc.db')
     c = conn.cursor()
     
@@ -113,33 +120,66 @@ def sen_retrieval(docs,claim):
     matrix = vectorizer.fit_transform(texts)
     query = vectorizer.transform([claim])[0]
     cosineSimilarities = cosine_similarity(query, matrix).flatten()
-    idx = sorted(range(len(cosineSimilarities)), key=lambda i: cosineSimilarities[i], reverse=True)[:5]
+    idx = sorted(range(len(cosineSimilarities)), key=lambda i: cosineSimilarities[i], reverse=True)[:8]
     rel = [index[i] for i in idx]
     #relevant_sen = [(i.split(' ')[0],int(i.split(' ')[1]),doc_sen[i]) for i in rel]
     
     return(rel)
     
 
+#----------- Main component ---------------
 corpus_folder = 'wiki/wiki-pages-text'
 db_path = 'wiki/doc.db'
-claim_file = "devset.json"
+claim_file = "train.json"
 
 with codecs.open(claim_file,'r+','utf-8') as test_file:
     data = json.load(test_file)
 
 
-count = 10
+count = 20
+t_h = 0
+t_m = 0
 for i in data.keys():
-        if count != 0:
-            print('==================')
-            print(f'Claim: {data[i]["claim"]}')
-            rel_docs = doc_ret(data[i]['claim'])
-            print(f'Relevant Docs: {rel_docs}')
-            print(sen_retrieval(rel_docs,data[i]['claim']))
-            print('----------')
-            print(data[i]['evidence'])
-            print('==================')
-            count = count -1
+    if count != 0:
+        print('==================')
+        print(f'Claim: {data[i]["claim"]}')
+        rel_docs = doc_ret(data[i]['claim'])
+        print(f'Relevant Docs: {rel_docs}')
+
+
+        candidate = sen_retrieval(rel_docs,data[i]['claim'])
+        candidate = [unicodedata.normalize('NFD',i) for i in candidate]
+        evidence = data[i]['evidence']
+
+        hit = 0
+        miss = 0
+        for i in evidence:
+            actual = ' '.join(str(ii) for ii in i)
+            if candidate:
+                if actual in candidate:
+                    hit += 1 
+                else:
+                    miss += 1
+                    
+        if miss == 0:
+            t_h += 1
+        elif miss != 0:
+            t_m += 1
         else:
-            break
+            pass
+        print(f'Candidate sen: {candidate}')
+        print(f'Atual sen: {evidence}')
+        print(f'Hit: {hit}  Miss: {miss}')
+        print('==================')
+        count = count -1
+    else:
+        break
+    
+print('############# Stats ###########')
+print(f'Total count = {t_h + t_m}')
+print(f'Total Hit = {t_h}')
+print(f'Total Miss = {t_m}')
+print(f'Accuracy = {t_h/(t_h + t_m)}')
+end = time.time()
+print(end - start)
     

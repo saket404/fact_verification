@@ -1,4 +1,4 @@
-WORK_OF_ART = {'film':' film','movie':' film','serie':' TV','show':' TV'}
+WORK_OF_ART = {'film':' film','movie':' film','serie':' TV','show':' TV','song':' song','album': ' album'}
 tense = ['is','was','were','are','had','has']
 
 def check_parse(claim):
