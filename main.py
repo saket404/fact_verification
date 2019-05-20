@@ -5,16 +5,14 @@ from collections import defaultdict
 import nltk
 import unicodedata 
 import wikipedia
-from util import check_parse, get_ner, doc_to_word, word_to_doc
+from util import check_parse, get_ner, doc_to_word, word_to_doc, get_NP
 from allennlp.predictors.predictor import Predictor
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import operator
 import sqlite3
 predictor = Predictor.from_path("https://s3-us-west-2.amazonaws.com/allennlp/models/fine-grained-ner-model-elmo-2018.12.21.tar.gz")
-
-import time
-start = time. time()
+predictor1 = Predictor.from_path("https://s3-us-west-2.amazonaws.com/allennlp/models/elmo-constituency-parser-2018.03.14.tar.gz")
 
 #------------ Get names of all documents -------------
 index = []
@@ -40,8 +38,9 @@ def wiki(word):
 def doc_ret(sen):
     org = sen
     claim = get_ner(sen,predictor)
-    #print(f'Claim NER: {claim}')
+    print(f'Claim NER: {claim}')
     c_doc = []
+
     for c_ent in claim:
         result = ""
         c_ent = unicodedata.normalize('NFC',c_ent)
@@ -55,36 +54,33 @@ def doc_ret(sen):
             result = word_to_doc(result)
             c_doc.append(result)
 
-        if not result:
-            low = 1
-            low_d = ''
-            for en in doc_ent:
-                d = stringdist.levenshtein_norm(en,c_ent)
-                if  d <= low:
-                    low = d
-                    low_d = en 
-            low_d = word_to_doc(low_d)
-            c_doc.append(low_d)
-        
-    result = check_parse(org)
+        # if not result:
+        #     low = 1
+        #     low_d = ''
+        #     for en in doc_ent:
+        #         d = stringdist.levenshtein_norm(en,c_ent)
+        #         if  d <= low:
+        #             low = d
+        #             low_d = en 
+        #     low_d = word_to_doc(low_d)
+        #     c_doc.append(low_d)
+    
+
+    result = check_parse(org,predictor1)
     for w in result:
       parse = wiki(w)
       if parse and parse in doc_ent:
         parse = word_to_doc(parse)
         c_doc.append(parse)
     
-      
+    
+    # If NER cant extract entities get the First NP followed by VP
     if not result and not claim:
-        tense = ['is','was','were','are','had','has']
-        tense_s = [i for i in tense if i in org.split()]
-        if tense_s:
-            if org.split(tense_s[0])[0] in doc_ent:
-                result = word_to_doc(org.split(tense_s[0])[0])
-
-            result = wiki(org.split(tense_s[0])[0])
+        nP = get_NP(org,predictor1) 
+        if nP:
+            result = wiki(nP)
         else:
             result = wiki(org)
-        
         if result and result in doc_ent:
             result = word_to_doc(result)
             c_doc.append(result)
@@ -122,7 +118,7 @@ def sen_retrieval(docs,claim):
     cosineSimilarities = cosine_similarity(query, matrix).flatten()
     idx = sorted(range(len(cosineSimilarities)), key=lambda i: cosineSimilarities[i], reverse=True)[:8]
     rel = [index[i] for i in idx]
-    #relevant_sen = [(i.split(' ')[0],int(i.split(' ')[1]),doc_sen[i]) for i in rel]
+    relevant_sen = [(i.split(' ')[0],int(i.split(' ')[1]),doc_sen[i]) for i in rel]
     
     return(rel)
     
@@ -135,45 +131,47 @@ claim_file = "train.json"
 with codecs.open(claim_file,'r+','utf-8') as test_file:
     data = json.load(test_file)
 
+import time
+start = time. time()
 
-count = 20
+count = 100
 t_h = 0
 t_m = 0
 for i in data.keys():
-    if count != 0:
-        print('==================')
-        print(f'Claim: {data[i]["claim"]}')
-        rel_docs = doc_ret(data[i]['claim'])
-        print(f'Relevant Docs: {rel_docs}')
+        if count != 0:
+            print('==================')
+            print(f'Claim: {data[i]["claim"]}')
+            rel_docs = doc_ret(data[i]['claim'])
+            print(f'Relevant Docs: {rel_docs}')
+            candidate = sen_retrieval(rel_docs,data[i]['claim'])
+            print(candidate)
+            
+            candidate = [unicodedata.normalize('NFD',i) for i in candidate]
+            evidence = data[i]['evidence']
 
-
-        candidate = sen_retrieval(rel_docs,data[i]['claim'])
-        candidate = [unicodedata.normalize('NFD',i) for i in candidate]
-        evidence = data[i]['evidence']
-
-        hit = 0
-        miss = 0
-        for i in evidence:
-            actual = ' '.join(str(ii) for ii in i)
-            if candidate:
-                if actual in candidate:
-                    hit += 1 
-                else:
-                    miss += 1
-                    
-        if miss == 0:
-            t_h += 1
-        elif miss != 0:
-            t_m += 1
+            hit = 0
+            miss = 0
+            for i in evidence:
+                actual = ' '.join(str(ii) for ii in i)
+                if candidate:
+                    if actual in candidate:
+                        hit += 1 
+                    else:
+                        miss += 1
+                        
+            if miss == 0:
+                t_h += 1
+            elif miss != 0:
+                t_m += 1
+            else:
+                pass
+            # print(f'Candidate sen: {candidate}')
+            print(f'Atual sen: {evidence}')
+            print(f'Hit: {hit}  Miss: {miss}')
+            print('==================')
+            count = count -1
         else:
-            pass
-        print(f'Candidate sen: {candidate}')
-        print(f'Atual sen: {evidence}')
-        print(f'Hit: {hit}  Miss: {miss}')
-        print('==================')
-        count = count -1
-    else:
-        break
+            break
     
 print('############# Stats ###########')
 print(f'Total count = {t_h + t_m}')

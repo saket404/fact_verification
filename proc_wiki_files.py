@@ -20,6 +20,8 @@ sql_create_projects_table = """ CREATE TABLE IF NOT EXISTS documents (
                                         text text
                                     ); """
 c.execute(sql_create_projects_table)
+indexing = """CREATE INDEX 'doc_id' ON documents('doc_id')"""
+c.execute(indexing)
 
 for file in files:
     print(file)
@@ -32,7 +34,13 @@ for file in files:
                 page_id = page_id.encode('utf8').decode('utf8')
                 index.append(page_id)
                 sen_id = int(elem[1])
-                doc[sen_id] = " ".join(elem[2:])
+                line = " ".join(elem[2:])
+                line = line.replace('-LRB-','(')
+                line = line.replace('-RRB-',')')
+                line = line.replace('-LSB-','{')
+                line = line.replace('-RSB-','}')
+                line = line.replace('-COLON-',':')
+                doc[sen_id] = line
             except ValueError:
                 continue
             

@@ -1,25 +1,34 @@
-WORK_OF_ART = {'film':' film','movie':' film','serie':' TV','show':' TV','song':' song','album': ' album'}
-tense = ['is','was','were','are','had','has']
+WORK_OF_ART = {'film':' film','movie':' film','serie':' TV','show':' TV','song':' song','album': ' album','season':' TV'}
+phrase = ['directed by','based on','premiered']
 
-def check_parse(claim):
+def get_NP(claim,predictor,check = ''):
+    result = predictor.predict(claim)
+    entity = ''
+    tree = result['hierplane_tree']['root']
+    if 'children' in tree.keys():
+        children = tree['children']
+    if children[0]['nodeType'] == 'NP' and children[1]['nodeType'] == 'VP':
+        if check != '' and check in children[1]['word']:
+            entity = children[0]['word'] + WORK_OF_ART['film']
+        else:
+            entity = children[0]['word']
+
+    return entity
+
+def check_parse(claim,predictor):
     
     claim = claim.replace(".","")
     ent = []
     if any(i in claim for i in WORK_OF_ART.keys()):
         param = [WORK_OF_ART[i] for i in WORK_OF_ART.keys() if i in claim]
-        tense_s = [i for i in tense if i in claim.split()]
-        if tense_s:
-            ent.append(claim.split(tense_s[0])[0]+param[0])
-    if 'directed by' in claim:
-        tense_s = [i for i in tense if i in claim.split()]
-        if tense_s:
-            ent.append(claim.split(tense_s[0])[0]+WORK_OF_ART['film'])
-    if 'premiered' in claim:
-        ent.append(claim.split('premiered')[0]+WORK_OF_ART['film'])
-    if 'based on' in claim:
-        tense_s = [i for i in tense if i in claim.split()]
-        if tense_s:
-            ent.append(claim.split(tense_s[0])[0]+WORK_OF_ART['film'])
+        result = get_NP(claim,predictor)
+        if result:
+            ent.append(result+param[0])
+    else:
+        param = [i for i in phrase if i in claim]
+        if param:
+            result = get_NP(claim,predictor,check=param[0])
+    
     
     return list(set(ent))
 
@@ -72,6 +81,7 @@ def doc_to_word(word):
     word = word.replace("_"," ")
     word = word.replace("-LRB-","(")
     word = word.replace("-RRB-",")")
+    word = word.replace("-COLON-",":")
     return(word)
 
 def word_to_doc(word):  
@@ -79,4 +89,5 @@ def word_to_doc(word):
     word = word.replace(" ","_")
     word = word.replace("(","-LRB-")
     word = word.replace(")","-RRB-")
+    word = word.replace(":","-COLON-")
     return(word)
