@@ -1,4 +1,4 @@
-WORK_OF_ART = {'film':' film','movie':' film','serie':' TV','show':' TV','song':' song','album': ' album','season':' TV'}
+WORK_OF_ART = {'film':' film','movie':' film','series':' TV','show':' TV','song':' song','album': ' album','season':' TV'}
 phrase = ['directed by','based on','premiered']
 
 def get_NP(claim,predictor,check = ''):

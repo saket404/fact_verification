@@ -2,6 +2,7 @@ import os
 import json
 import codecs
 from collections import defaultdict
+import stringdist
 import nltk
 import unicodedata 
 import wikipedia
@@ -13,6 +14,8 @@ import operator
 import sqlite3
 predictor = Predictor.from_path("https://s3-us-west-2.amazonaws.com/allennlp/models/fine-grained-ner-model-elmo-2018.12.21.tar.gz")
 predictor1 = Predictor.from_path("https://s3-us-west-2.amazonaws.com/allennlp/models/elmo-constituency-parser-2018.03.14.tar.gz")
+from mediawiki import MediaWiki
+wikipedia = MediaWiki()
 
 #------------ Get names of all documents -------------
 index = []
@@ -22,14 +25,10 @@ with codecs.open('wiki/doc.txt', "r+","utf-8") as doc_file:
         doc = doc.strip()
         index.append(doc)
 
-doc_ent = []
-for word in index:
-    word = doc_to_word(word)
-    doc_ent.append(word)
-    
+doc_ent = [doc_to_word(word) for word in index]
 #----------- Document Retrieval component ---------------
 def wiki(word):
-  res = wikipedia.search(word,1)
+  res = wikipedia.search(word,results = 1)
   if res:
     return res[0]
   else:
@@ -40,53 +39,42 @@ def doc_ret(sen):
     claim = get_ner(sen,predictor)
     print(f'Claim NER: {claim}')
     c_doc = []
+    get_noun = get_NP(org,predictor1)
+    if get_noun:
+        if get_noun in doc_ent:
+            c_doc.append(get_noun)
+        else:
+            get_noun = wiki(get_noun)
+            if get_noun in doc_ent:
+                c_doc.append(get_noun)
 
     for c_ent in claim:
         result = ""
         c_ent = unicodedata.normalize('NFC',c_ent)
-        if c_ent in doc_ent:
+        if c_ent in doc_ent and c_ent not in c_doc:
             result = c_ent
-            result = word_to_doc(result)
             c_doc.append(result) 
 
         result = wiki(c_ent)
-        if result in doc_ent:
-            result = word_to_doc(result)
+        if result in doc_ent and result not in c_doc:
             c_doc.append(result)
-
-        # if not result:
-        #     low = 1
-        #     low_d = ''
-        #     for en in doc_ent:
-        #         d = stringdist.levenshtein_norm(en,c_ent)
-        #         if  d <= low:
-        #             low = d
-        #             low_d = en 
-        #     low_d = word_to_doc(low_d)
-        #     c_doc.append(low_d)
     
-
+    # TO handle entity ambiguation
     result = check_parse(org,predictor1)
     for w in result:
       parse = wiki(w)
-      if parse and parse in doc_ent:
-        parse = word_to_doc(parse)
+      if parse and parse in doc_ent and parse not in c_doc:
         c_doc.append(parse)
     
     
-    # If NER cant extract entities get the First NP followed by VP
-    if not result and not claim:
-        nP = get_NP(org,predictor1) 
-        if nP:
-            result = wiki(nP)
-        else:
-            result = wiki(org)
+    # If NER cant extract entities
+    if not result and not claim and not get_noun:
+        result = wiki(org)
         if result and result in doc_ent:
-            result = word_to_doc(result)
             c_doc.append(result)
   
-
-    return list(set(c_doc))
+    final = [word_to_doc(i) for i in list(set(c_doc))]
+    return final
 
 #----------- Sentence Retrieval component ---------------
 def sen_retrieval(docs,claim):
@@ -116,7 +104,7 @@ def sen_retrieval(docs,claim):
     matrix = vectorizer.fit_transform(texts)
     query = vectorizer.transform([claim])[0]
     cosineSimilarities = cosine_similarity(query, matrix).flatten()
-    idx = sorted(range(len(cosineSimilarities)), key=lambda i: cosineSimilarities[i], reverse=True)[:8]
+    idx = sorted(range(len(cosineSimilarities)), key=lambda i: cosineSimilarities[i], reverse=True)[:5]
     rel = [index[i] for i in idx]
     relevant_sen = [(i.split(' ')[0],int(i.split(' ')[1]),doc_sen[i]) for i in rel]
     
@@ -126,7 +114,7 @@ def sen_retrieval(docs,claim):
 #----------- Main component ---------------
 corpus_folder = 'wiki/wiki-pages-text'
 db_path = 'wiki/doc.db'
-claim_file = "train.json"
+claim_file = "devset.json"
 
 with codecs.open(claim_file,'r+','utf-8') as test_file:
     data = json.load(test_file)
@@ -134,7 +122,7 @@ with codecs.open(claim_file,'r+','utf-8') as test_file:
 import time
 start = time. time()
 
-count = 100
+count = 10
 t_h = 0
 t_m = 0
 for i in data.keys():
@@ -159,7 +147,7 @@ for i in data.keys():
                     else:
                         miss += 1
                         
-            if miss == 0:
+            if miss == 0 and hit != 0:
                 t_h += 1
             elif miss != 0:
                 t_m += 1
