@@ -1,7 +1,10 @@
-WORK_OF_ART = {'film':' film','movie':' film','series':' TV','show':' TV','song':' song','album': ' album','season':' TV'}
-phrase = ['directed by','based on','premiered']
+WORK_OF_ART = {'film': ' film', 'movie': ' film', 'series': ' TV',
+               'show': ' TV', 'song': ' song', 'album': ' album',
+               'season': ' TV'}
+phrase = ['directed by', 'based on', 'premiered']
 
-def get_NP(claim,predictor,check = ''):
+
+def get_NP(claim, predictor, check=''):
     result = predictor.predict(claim)
     entity = ''
     tree = result['hierplane_tree']['root']
@@ -15,24 +18,25 @@ def get_NP(claim,predictor,check = ''):
 
     return entity
 
-def check_parse(claim,predictor):
-    
-    claim = claim.replace(".","")
+
+def check_parse(claim, predictor):
+
+    claim = claim.replace(".", "")
     ent = []
     if any(i in claim for i in WORK_OF_ART.keys()):
         param = [WORK_OF_ART[i] for i in WORK_OF_ART.keys() if i in claim]
-        result = get_NP(claim,predictor)
+        result = get_NP(claim, predictor)
         if result:
             ent.append(result+param[0])
     else:
         param = [i for i in phrase if i in claim]
         if param:
-            result = get_NP(claim,predictor,check=param[0])
-    
-    
+            result = get_NP(claim, predictor, check=param[0])
+
     return list(set(ent))
 
-def get_ner(sentence,predictor):
+
+def get_ner(sentence, predictor):
     org = sentence
     result = predictor.predict(sentence)
     words = []
@@ -55,7 +59,8 @@ def get_ner(sentence,predictor):
             prev.append(words[i])
             if 'WORK_OF_ART' in tags[i]:
                 if any(i in org for i in WORK_OF_ART.keys()):
-                    add = [WORK_OF_ART[i] for i in WORK_OF_ART.keys() if i in org]
+                    add = [WORK_OF_ART[i]
+                           for i in WORK_OF_ART.keys() if i in org]
                     word = " ".join(prev) + add[0]
                 else:
                     word = " ".join(prev)
@@ -66,28 +71,31 @@ def get_ner(sentence,predictor):
         else:
             if 'WORK_OF_ART' in tags[i]:
                 if any(i in org for i in WORK_OF_ART.keys()):
-                    add = [WORK_OF_ART[i] for i in WORK_OF_ART.keys() if i in org]
+                    add = [WORK_OF_ART[i]
+                           for i in WORK_OF_ART.keys() if i in org]
                     word = words[i] + add[0]
                 else:
                     word = words[i]
             else:
-                word  = words[i]
+                word = words[i]
             docs.append(word)
 
     return docs
 
-def doc_to_word(word):  
-    word = word.replace("-SLH-","/")
-    word = word.replace("_"," ")
-    word = word.replace("-LRB-","(")
-    word = word.replace("-RRB-",")")
-    word = word.replace("-COLON-",":")
+
+def doc_to_word(word):
+    word = word.replace("-SLH-", "/")
+    word = word.replace("_", " ")
+    word = word.replace("-LRB-", "(")
+    word = word.replace("-RRB-", ")")
+    word = word.replace("-COLON-", ":")
     return(word)
 
-def word_to_doc(word):  
-    word = word.replace("/","-SLH-")
-    word = word.replace(" ","_")
-    word = word.replace("(","-LRB-")
-    word = word.replace(")","-RRB-")
-    word = word.replace(":","-COLON-")
+
+def word_to_doc(word):
+    word = word.replace("/", "-SLH-")
+    word = word.replace(" ", "_")
+    word = word.replace("(", "-LRB-")
+    word = word.replace(")", "-RRB-")
+    word = word.replace(":", "-COLON-")
     return(word)
