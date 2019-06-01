@@ -1,3 +1,8 @@
+"""
+This file reads the wiki pages and creates a sqlite database by preprocessing the text by removing special characters.
+"""
+
+
 import sqlite3
 import os
 import json
@@ -5,13 +10,12 @@ import codecs
 from collections import defaultdict
 import unicodedata as uni
 
-wiki_folder = 'wiki/wiki-pages-text'
-dest_dir = "wiki/wiki-pages-proc"
+wiki_folder = 'wiki-pages-text'
 files = os.listdir(wiki_folder)
 
 index = []
 
-conn = sqlite3.connect('wiki/doc.db')
+conn = sqlite3.connect('doc.db')
 c = conn.cursor()
 sql_create_projects_table = """ CREATE TABLE IF NOT EXISTS documents (
                                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -50,7 +54,7 @@ for file in files:
 conn.commit()
 conn.close()
 index = set(index)
-with codecs.open('wiki/doc.txt', "w+", "utf-8") as doc_file:
+with codecs.open('doc.txt', "w+", "utf-8") as doc_file:
     for doc in index:
         doc_file.write(doc+'\n')
 

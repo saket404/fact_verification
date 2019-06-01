@@ -1,3 +1,9 @@
+"""
+This file consists of the Document Retrieval and Sentence Retrieval code which writes the candidate sentences with its corresponding claim id to a json file for entail.py 
+which performs the Textual Entailment. 
+"""
+
+import numpy as np
 import time
 from mediawiki import MediaWiki
 import os
@@ -21,19 +27,20 @@ predictor = Predictor.from_path(
     "https://s3-us-west-2.amazonaws.com/allennlp/models/fine-grained-ner-model-elmo-2018.12.21.tar.gz")
 predictor1 = Predictor.from_path(
     "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo-constituency-parser-2018.03.14.tar.gz")
-# wikipedia = MediaWiki()
-nlp = spacy.load('en')
-neuralcoref.add_to_pipe(nlp, greedyness=0.4)
+
+# nlp = spacy.load('en')
+# neuralcoref.add_to_pipe(nlp, greedyness=0.5)
 
 # ------------ Get names of all documents -------------
 index = []
-with codecs.open('wiki/doc.txt', "r+", "utf-8") as doc_file:
+with codecs.open('doc.txt', "r+", "utf-8") as doc_file:
     content = doc_file.readlines()
     for doc in content:
         doc = doc.strip()
         index.append(doc)
 
 doc_ent = [doc_to_word(word) for word in index]
+index = []
 # ----------- Document Retrieval component ---------------
 
 
@@ -50,6 +57,7 @@ def doc_ret(sen):
     claim = get_ner(sen, predictor)
     # print(f'Claim NER: {claim}')
     c_doc = []
+    # TO handle entity ambiguation
     get_noun = get_NP(org, predictor1)
     if get_noun:
         if get_noun in doc_ent:
@@ -94,15 +102,17 @@ def coref(sentences):
     count = 0
     first = ""
     check_doc = ""
-    output = []
+    output = {}
+    sent = []
     for sen in sentences:
+        sent.append((sen[0], sen[1], sen[2], sen[3]))
         if check_doc != sen[1]:
             count = 0
 
         if count == 0:
             check_doc = sen[1]
             first = doc_to_word(sen[1]) + ' .'
-            output.append((sen[0], sen[1], sen[2], sen[3]))
+            output[sen[1]+" "+str(sen[2])] = sen[3]
             count += 1
         else:
             text = sen[3].replace('.', '')
@@ -110,9 +120,9 @@ def coref(sentences):
             cor = nlp(concat)
             res = cor._.coref_resolved
             update = res.split('.')[1] + "."
-            output.append((sen[0], sen[1], sen[2], update))
+            output[sen[1] + " " + str(sen[2])] = update
 
-    return output
+    return sent, output
 
 
 def lemmatize(word):
@@ -126,8 +136,8 @@ def sen_retrieval(docs, claim):
     if not docs:
         return None
     claim = claim.replace('.', '')
-    vectorizer = TfidfVectorizer(stop_words='english', ngram_range=(1, 3))
-    conn = sqlite3.connect('wiki/doc.db')
+    vectorizer = TfidfVectorizer(stop_words='english', ngram_range=(1, 2))
+    conn = sqlite3.connect('doc.db')
     c = conn.cursor()
 
     texts = []
@@ -139,26 +149,26 @@ def sen_retrieval(docs, claim):
     query = 'SELECT * FROM documents WHERE doc_id IN (%s)' % placeholders
 
     sentences = c.execute(query, docs)
-    # sentences = coref(sentences)
+    sentences, coref_sentences = coref(sentences)
     for i in sentences:
         index.append(str(i[1]) + ' ' + str(i[2]))
-        sen = [lemmatize(i) for i in i[3].split()]
+        sen = [lemmatize(i).lower() for i in i[3].split()]
         texts.append(" ".join(sen))
         doc_sen[str(i[1]) + ' ' + str(i[2])] = i[3]
 
     c.close()
 
     matrix = vectorizer.fit_transform(texts)
-    claim = [lemmatize(i) for i in claim.split()]
+    claim = [lemmatize(i).lower() for i in claim.split()]
     query = vectorizer.transform([" ".join(claim)])[0]
     cosineSimilarities = cosine_similarity(query, matrix).flatten()
     idx = sorted(range(len(cosineSimilarities)),
-                 key=lambda i: cosineSimilarities[i], reverse=True)[:7]
+                 key=lambda i: cosineSimilarities[i], reverse=True)[:3]
     rel = [index[i] for i in idx]
-    relevant_sen = [(i.split(' ')[0], int(i.split(' ')[1]), doc_sen[i])
+    relevant_sen = [[i.split(' ')[0], int(i.split(' ')[1]), doc_sen[i]]
                     for i in rel]
 
-    return(rel)
+    return(relevant_sen)
 
 
 # ----------- Main component ---------------
@@ -170,52 +180,28 @@ with codecs.open(claim_file, 'r+', 'utf-8') as test_file:
     data = json.load(test_file)
 
 start = time. time()
-
-count = 15000
-t_h = 0
-t_m = 0
-for i in data.keys():
-        if count != 0:
-            print('==================')
-            print(f'Claim: {data[i]["claim"]}')
+to_entail = {}
+count = 1
+with codecs.open('temp.json', 'w+', 'utf-8') as temp_file:
+    for i in data.keys():
+        if count in [500, 1000, 5000, 8000, 10000]:
+            print(count)
+        # print('==================')
+        try:
             rel_docs = doc_ret(data[i]['claim'])
-            print(f'Relevant Docs: {rel_docs}')
-            candidate = sen_retrieval(rel_docs, data[i]['claim'])
-            print(candidate)
+        except Exception:
+            print(f"Error at {i}")
+            rel_docs = []
+        dummy = {}
+        dummy['claim'] = data[i]['claim']
+        dummy['candidate'] = sen_retrieval(rel_docs, data[i]['claim'])
+        to_entail[i] = dummy
+        count += 1
+        # print('=====================')
 
-            if candidate:
-                candidate = [unicodedata.normalize(
-                    'NFD', i) for i in candidate]
-            evidence = data[i]['evidence']
+    json.dump(to_entail, temp_file, indent=2)
 
-            hit = 0
-            miss = 0
-            for i in evidence:
-                actual = ' '.join(str(ii) for ii in i)
-                if candidate:
-                    if actual in candidate:
-                        hit += 1
-                    else:
-                        miss += 1
-
-            if miss == 0 and hit != 0:
-                t_h += 1
-            elif miss != 0:
-                t_m += 1
-            else:
-                pass
-            print(f'Candidate sen: {candidate}')
-            print(f'Atual sen: {evidence}')
-            print(f'Hit: {hit}  Miss: {miss}')
-            print('=====================')
-            count = count - 1
-        else:
-            break
 
 print('############# Stats ###########')
-print(f'Total count = {t_h + t_m}')
-print(f'Total Hit = {t_h}')
-print(f'Total Miss = {t_m}')
-print(f'Accuracy = {t_h/(t_h + t_m)}')
 end = time.time()
 print(end - start)

@@ -1,7 +1,17 @@
+"""
+This file consists 5 functions and are utilities used by the main components:
+
+get_NP: which gets the Noun phrase before the first verb phrase.
+check_parse: is a function which appends WORK_OF_ART tokens to entities for wikipedia search.
+get_ner: is the function which implements the extraction of NER using AllenNLP and combines multi-word entities as one
+doc_to_word: is converting document names to normal wiki pages format.
+word_to_doc: is the vice versa of doc_to_word. 
+"""
+
 WORK_OF_ART = {'film': ' film', 'movie': ' film', 'series': ' TV',
                'show': ' TV', 'song': ' song', 'album': ' album',
                'season': ' TV'}
-phrase = ['directed by', 'based on', 'premiered']
+phrase = ['directed by', 'based on']
 
 
 def get_NP(claim, predictor, check=''):
